@@ -1,6 +1,5 @@
 name: macOS
 
-# runs on every push, and on demand from the Actions tab
 on:
   push:
   workflow_dispatch:
@@ -12,8 +11,6 @@ on:
 
 jobs:
   build:
-    # macos-15 / macos-14 = Apple Silicon (M1)
-    # macos-13            = Intel, if you need x86_64
     runs-on: macos-15
     timeout-minutes: 60
 
@@ -25,16 +22,60 @@ jobs:
           sw_vers
           uname -m
           sysctl -n machdep.cpu.brand_string
-          xcodebuild -version || true
+          xcodebuild -version
 
-      # ---- put your real work here ----
-      - name: Build
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Find project
+        id: find
         run: |
-          echo "your build commands go here"
-          # swift build
-          # xcodebuild -scheme MyApp -destination 'platform=macOS' build
+          WS=$(find . -maxdepth 3 -name '*.xcworkspace' -not -path '*/.*' | head -1)
+          PROJ=$(find . -maxdepth 3 -name '*.xcodeproj' -not -path '*/.*' | head -1)
+          if [ -n "$WS" ]; then
+            echo "kind=workspace"        >> $GITHUB_OUTPUT
+            echo "path=$WS"              >> $GITHUB_OUTPUT
+          elif [ -n "$PROJ" ]; then
+            echo "kind=project"          >> $GITHUB_OUTPUT
+            echo "path=$PROJ"            >> $GITHUB_OUTPUT
+          elif [ -f Package.swift ]; then
+            echo "kind=spm"              >> $GITHUB_OUTPUT
+          else
+            echo "kind=none"             >> $GITHUB_OUTPUT
+          fi
 
-      # ---- optional: SSH in to debug a failure ----
+      - name: List schemes
+        if: steps.find.outputs.kind == 'workspace' || steps.find.outputs.kind == 'project'
+        run: |
+          FLAG=$([ "${{ steps.find.outputs.kind }}" = "workspace" ] && echo -workspace || echo -project)
+          xcodebuild -list $FLAG "${{ steps.find.outputs.path }}"
+
+      - name: Build (Xcode)
+        if: steps.find.outputs.kind == 'workspace' || steps.find.outputs.kind == 'project'
+        run: |
+          FLAG=$([ "${{ steps.find.outputs.kind }}" = "workspace" ] && echo -workspace || echo -project)
+          SCHEME=$(xcodebuild -list $FLAG "${{ steps.find.outputs.path }}" \
+                   | awk '/Schemes:/{f=1;next} f&&NF{print $1; exit}')
+          echo "Building scheme: $SCHEME"
+          set -o pipefail
+          xcodebuild \
+            $FLAG "${{ steps.find.outputs.path }}" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+
+      - name: Build (Swift Package)
+        if: steps.find.outputs.kind == 'spm'
+        run: swift build -v
+
+      - name: No project found
+        if: steps.find.outputs.kind == 'none'
+        run: |
+          echo "No .xcodeproj, .xcworkspace or Package.swift in the repo yet."
+          echo "Add your Xcode project, push, and this will build it automatically."
+
       - name: Debug over SSH
         if: ${{ inputs.debug }}
         uses: mxschmitt/action-tmate@v3
