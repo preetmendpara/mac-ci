@@ -70,6 +70,14 @@ jobs:
         if: steps.find.outputs.kind == 'spm'
         run: swift build -v
 
+      - name: Test (Swift Package)
+        if: steps.find.outputs.kind == 'spm'
+        run: swift test -v
+
+      - name: Run it
+        if: steps.find.outputs.kind == 'spm'
+        run: swift run HelloMac
+
       - name: No project found
         if: steps.find.outputs.kind == 'none'
         run: |
