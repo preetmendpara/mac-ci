@@ -1,0 +1,42 @@
+name: macOS
+
+# runs on every push, and on demand from the Actions tab
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Open an SSH session to the Mac (for debugging)"
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    # macos-15 / macos-14 = Apple Silicon (M1)
+    # macos-13            = Intel, if you need x86_64
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show the machine
+        run: |
+          sw_vers
+          uname -m
+          sysctl -n machdep.cpu.brand_string
+          xcodebuild -version || true
+
+      # ---- put your real work here ----
+      - name: Build
+        run: |
+          echo "your build commands go here"
+          # swift build
+          # xcodebuild -scheme MyApp -destination 'platform=macOS' build
+
+      # ---- optional: SSH in to debug a failure ----
+      - name: Debug over SSH
+        if: ${{ inputs.debug }}
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
